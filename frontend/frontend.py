@@ -164,6 +164,16 @@ def explain(reply: Reply) -> str:
 def create_app(config: Config | None = None) -> Flask:
     cfg = config or Config.from_env()
     app = Flask(__name__)
+    
+    from flask import redirect
+
+    @app.route("/http/8081")
+    def ide_slash_fix():
+        return redirect("8081/")    
+        
+        
+    
+    
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 
     def forward_headers() -> dict:

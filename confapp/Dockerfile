@@ -23,7 +23,7 @@ RUN if [ -n "$HTTP_PROXY" ]; then \
     fi
 
 # Only the application file. mock_cdh.py and tests are excluded by .dockerignore.
-COPY backend.py .
+COPY confapp.py .
 
 EXPOSE 8080
 
@@ -31,6 +31,6 @@ EXPOSE 8080
 # above are readable by any UID. Change 1001 if your base image uses another user.
 USER 1001
 
-CMD ["python", "backend.py"]
+CMD ["python", "confapp.py"]
 # Optional, if gunicorn is approved in your Artifactory (add it to requirements.txt):
-# CMD ["gunicorn", "-b", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "backend:app"]
+# CMD ["gunicorn", "-b", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "confapp:app"]

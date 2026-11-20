@@ -1,4 +1,4 @@
-# App 2: normal worker pod (web front). Replace the placeholder tag below.
+# App 2: normal worker pod (web frontend). Replace the placeholder tag below.
 ARG BASE_IMAGE=base-images-catalog.artifactory-bringer.group.bringernet/ibm9/python-311:1-52.xxxxx
 FROM ${BASE_IMAGE}
 
@@ -22,7 +22,7 @@ RUN if [ -n "$HTTP_PROXY" ]; then \
         pip install --no-cache-dir -r requirements.txt; \
     fi
 
-COPY front.py .
+COPY frontend.py .
 COPY templates ./templates
 COPY static ./static
 
@@ -32,6 +32,6 @@ EXPOSE 8080
 # above are readable by any UID. Change 1001 if your base image uses another user.
 USER 1001
 
-CMD ["python", "front.py"]
+CMD ["python", "frontend.py"]
 # Optional, if gunicorn is approved in your Artifactory (add it to requirements.txt):
-# CMD ["gunicorn", "-b", "0.0.0.0:8080", "--workers", "2", "--threads", "4", "front:app"]
+# CMD ["gunicorn", "-b", "0.0.0.0:8080", "--workers", "2", "--threads", "4", "frontend:app"]
