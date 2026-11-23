@@ -100,3 +100,19 @@ If your package index needs a custom URL, add `--build-arg PIP_INDEX_URL=...` (a
 - Tested with Python 3.12.3 on Flask 3.0.3 (Werkzeug 3.1.9, Jinja2 3.1.6, itsdangerous 2.2.0, click 8.5.1, blinker 1.9.0, MarkupSafe 3.0.4). The code is checked to parse as Python 3.11 syntax but was not run on 3.11. Run the tests once on your 3.11 base image.
 - Flask 3.0.3 does not pin its dependencies tightly. For reproducible builds, pin the versions above in `requirements.txt` if your Artifactory carries them.
 - Under OpenShift's `restricted` SCC the pod runs with a UID chosen by the platform. The files are readable by any UID and the apps write nothing to disk.
+
+
+## Additional prompts for Trustee Server 
+
+Goal: run a local, standalone Trustee (KBS + Attestation Service + RVPS) from the confidential-containers/trustee repo, for a POC. It runs in its own terminal (Terminal 4) on a normal machine, with no TDX hardware and no Kubernetes.
+
+Please:
+1. Read the repo's own docs and pick the simplest way to run KBS with a built-in or local AS in a single terminal (build from source with cargo, or a prebuilt binary). Put everything in a new folder called "trustee", separate from my other apps.
+2. Configure it in test mode: use the sample (fake) verifier and an allow-all attestation policy, so sample evidence always passes. No real TDX checks.
+3. Store one secret in the KBS at resource path default/kbsres1/key1. Its value must be exactly: some-test-secret followed by a newline.
+4. Listen on 127.0.0.1 on a free port (tell me which), and make sure calls to 127.0.0.1 skip my proxy (NO_PROXY).
+5. Give me a single start command and a one-line check that the KBS is up.
+6. Then document the exact HTTP calls a client must make to get that secret (the challenge/auth call, the attest call with sample evidence, then the resource fetch), each with a working curl example and the sample evidence JSON. I will write a small Python client from this.
+7. List anything the build needs from the internet or package mirrors, since my environment is restricted.
+
+Do not change my other apps. Explain in plain English and keep it simple. If something in the docs is unclear, ask me instead of guessing.

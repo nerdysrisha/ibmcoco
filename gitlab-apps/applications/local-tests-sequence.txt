@@ -1,0 +1,43 @@
+#TERMINAL 1 
+BASE_DIR=/home/roger/wssri/IBMCoCo/gitlab-apps/applications 
+python3 -m venv .venv &&  source .venv/bin/activate 
+
+pip install Flask=3.0.3 -r "$BASE_DIR/confapp/requirements.txt"
+
+export NO_PROXY=127.0.0.1, localhost no_proxy=127.0.0.1, localhost 
+
+cd "$BASE_DIR/confapp/"
+python confiapp.py 
+
+
+#TERMINAL 2
+BASE_DIR=/home/roger/wssri/IBMCoCo/gitlab-apps/applications 
+cd "$BASE_DIR/cdhmock/"
+MOCK_SECRET=pistasinghsecret python cdhmock.py
+ 
+#TERMINAL 3
+BASE_DIR=/home/roger/wssri/IBMCoCo/gitlab-apps/applications
+curl --noproxy '*' -s localhost:8080/healthz
+curl --noproxy '*' -s localhost:8080/api/v1/status
+curl --noproxy '*' -s -X POST localhost:8080/api/v1/compute -H 'Content-Type: application/json' -d '{"message":"hello"}'
+
+#TERMINAL 4
+BASE_DIR=/home/roger/wssri/IBMCoCo/gitlab-apps/applications
+cd "$BASE_DIR/frontend/"
+export NO_PROXY=127.0.0.1, localhost no_proxy=127.0.0.1, localhost 
+export PORT=8081
+export APP1_BASE_URL=http://127.0.0.1:8080
+python frontend.py 
+
+#Add port in vscode ports tab (port 8081) if not automaitcally added. 
+#open the link and we get landing page. 
+#enter 'hello' in the text box and see the result. 
+
+ 
+ 
+FILES TO UPLOAD NEXT TIME (only if needed)
+- For the cleanup step: frontend/templates/index.html and the top part of frontend.py (where the app is created and the redirect block sits), so I can give exact lines to change.
+- For the Docker build: confapp/Dockerfile and frontend/Dockerfile, so I can check the base image, proxy and pip settings.
+- Otherwise nothing, the summary is enough.
+
+
