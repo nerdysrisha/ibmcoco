@@ -1,0 +1,68 @@
+services:
+  kbs:
+    image: nerdysrisha/trustee-kbs-grpc-as:v1
+    environment:
+      - RUST_LOG
+    command: [
+        "/usr/local/bin/kbs",
+        "--config-file",
+        "/opt/confidential-containers/kbs/user-keys/kbs-config.toml",
+      ]
+    restart: always
+    ports:
+      - "8090:8080"
+    volumes:
+      - ./kbs/data/kbs-storage:/opt/confidential-containers/kbs/repository:rw
+      - ./kbs/data/nebula-ca:/opt/confidential-containers/kbs/nebula-ca:rw
+      - ./kbs/config/docker-compose:/opt/confidential-containers/kbs/user-keys
+    depends_on:
+      as:
+        condition: service_started
+      setup:
+        condition: service_completed_successfully
+
+  as:
+    image: nerdysrisha/trustee-coco-as-grpc:v1
+    environment:
+      - RUST_LOG
+    ports:
+    - "50004:50004"
+    restart: always
+    volumes:
+    - ./kbs/data/attestation-service:/opt/confidential-containers/attestation-service:rw
+    - ./kbs/config/docker-compose/as-config.json:/etc/as-config.json:rw
+    - ./kbs/config/docker-compose:/opt/confidential-containers/kbs/user-keys
+    command: [
+      "grpc-as",
+      "--socket",
+      "0.0.0.0:50004",
+      "--config-file",
+      "/etc/as-config.json"
+    ]
+    depends_on:
+    - rvps
+
+  rvps:
+    image: nerdysrisha/trustee-rvps:v1
+    environment:
+      - RUST_LOG
+    restart: always
+    ports:
+      - "50003:50003"
+    volumes:
+      - ./kbs/data/reference-values:/opt/confidential-containers/attestation-service/reference_values:rw
+      - ./kbs/config/docker-compose/rvps.json:/etc/rvps.json:rw
+    command: [
+      "rvps",
+      "--address",
+      "0.0.0.0:50003"
+    ]
+
+  setup:
+    image: nerdysrisha/trustee-openssl:v1
+    environment:
+      - RUST_LOG
+    entrypoint: ["/bin/ash", "/opt/confidential-containers/kbs/user-keys/setup.sh"]
+
+    volumes:
+      - ./kbs/config/docker-compose:/opt/confidential-containers/kbs/user-keys

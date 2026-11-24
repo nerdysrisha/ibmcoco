@@ -1,0 +1,31 @@
+[http_server]
+sockets = ["0.0.0.0:8080"]
+insecure_http = true
+
+[attestation_token]
+trusted_certs_paths = ["/opt/confidential-containers/kbs/user-keys/ca-cert.pem"]
+
+[attestation_service]
+type = "coco_as_grpc"
+as_addr = "http://as:50004"
+
+[admin]
+authorization_mode = "AuthenticatedAuthorization"
+
+[admin.authentication.bearer_jwt]
+identity_providers = [
+    { issuer = "TrusteeInDocker", public_key_uri = "/opt/confidential-containers/kbs/user-keys/public.pub" },
+]
+
+[admin.authorization.regex_acl]
+acls = [{ role = "admin", allowed_endpoints = "^/kbs/.+$" }]
+
+[[plugins]]
+name = "resource"
+storage_backend_type = "kvstorage"
+
+[storage_backend]
+storage_type = "LocalFs"
+
+[storage_backend.backends.local_fs]
+dir_path = "/opt/confidential-containers/kbs"
