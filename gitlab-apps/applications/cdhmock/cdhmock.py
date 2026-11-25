@@ -10,6 +10,9 @@ import os
 import threading
 import time
 
+import base64, subprocess
+
+
 from flask import Flask, Response, jsonify
 
 
@@ -36,11 +39,15 @@ def create_mock(secret: bytes = b"dummy-test-secret\n", mode: str = "ok", delay:
             return Response("not found", status=404)
         if current == "slow" or state["delay"]:
             time.sleep(state["delay"])
+
+        trustee = os.environ.get("TRUSTEE_URL")
+        if trustee:
+            out = subprocess.run([os.environ.get("KBS_CLIENT", "./kbs-client"), "--url", trustee, "get-resource", "--path", f"{repository}/{rtype}/{tag}"], capture_output=True, timeout=30)
+            if out.returncode != 0:
+                return Response("trustee error", status=502)
+            return Response(base64.b64decode(out.stdout.strip()), mimetype="application/octet-stream")
         return Response(state["secret"], mimetype="application/octet-stream")
-
     return app
-
-
 if __name__ == "__main__":
     mock = create_mock(
         secret=os.environ.get("MOCK_SECRET", "dummy-test-secret").encode() + b"\n",
