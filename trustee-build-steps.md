@@ -6,70 +6,50 @@ Chain being proven:
 
 Terminals: **T1** confapp, **T2** cdhmock, **T3** curl/test. Trustee runs in Docker (no terminal needed).
 
-Replace `<COMPOSE_DIR>` below with the folder that holds `docker-compose.yml` and `kbs/`
-(laptop: `.../applications/custom-docker-compose`, sensitive env: `.../applications/trustee-custom/custom-docker-compose`).
+`<COMPOSE_DIR>` = the folder holding `docker-compose.yml` and `kbs/`
+(laptop: `.../applications/custom-docker-compose`, env2: `.../applications/trustee-custom/custom-docker-compose`).
 
 ---
 
-## Part A. On the laptop (prepare and push)
+## Part A. On the laptop (push the missing pieces)
 
-1. Copy the `kbs-client` binary into the repo and make it runnable:
+1. Copy the `kbs-client` file into the repo and make it runnable:
    ```
    cp ~/kbs-client-dl/kbs-client <COMPOSE_DIR>/kbs-client
    chmod +x <COMPOSE_DIR>/kbs-client
    ```
 
-2. Do NOT commit generated files. Add this to `<COMPOSE_DIR>/.gitignore` (create if missing):
+2. Commit and push (`kbs-client`, the edited `cdhmock.py`, and this MD file):
    ```
-   kbs/data/
-   kbs/config/docker-compose/admin-token
-   kbs/config/docker-compose/private.key
-   kbs/config/docker-compose/public.pub
-   kbs/config/docker-compose/*.pem
-   kbs/config/docker-compose/*.key
-   kbs/config/docker-compose/*.csr
-   kbs/config/docker-compose/*.srl
+   git add kbs-client cdhmock.py TRUSTEE-POC-STEPS.md && git commit -m "Trustee POC: kbs-client, cdhmock via Trustee, steps" && git push
    ```
-
-3. Check what will be committed (should be: docker-compose.yml, 5 config files, kbs-client, cdhmock.py, this MD):
-   ```
-   git status
-   ```
-
-4. Commit and push:
-   ```
-   git add -A && git commit -m "Trustee POC: kbs-client, cdhmock via Trustee, steps" && git push
-   ```
+   Adjust the paths if you run it from a different folder (`cdhmock.py` lives in `cdhmock/`).
 
 ---
 
-## Part B. In the sensitive env
+## Part B. In env2
 
 Proxy workaround, in EVERY terminal:
 ```
 export NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost
 ```
 
-### 1. Pull the repo
+### 1. Pull the repo and make kbs-client runnable
 ```
 git pull
 chmod +x <COMPOSE_DIR>/kbs-client
 ```
 
-### 2. Start Trustee (first terminal, from `<COMPOSE_DIR>`)
+### 2. Start Trustee (from `<COMPOSE_DIR>`)
 ```
 cd <COMPOSE_DIR>
 docker compose up -d && sleep 10 && docker compose ps
 ```
 - Expect kbs, as, rvps running. `setup` exits (normal).
-
-Quick check (expect `401`):
-```
-curl --noproxy '*' -s -i -X POST http://127.0.0.1:8090/kbs/v0/attest
-```
+- If they are already running, skip this.
 
 ### 3. Load the secret (from `<COMPOSE_DIR>`)
-The client reads `kbs/config/docker-compose/admin-token` relative to the current folder, so stay in `<COMPOSE_DIR>`.
+Stay in `<COMPOSE_DIR>`: the client finds `kbs/config/docker-compose/admin-token` relative to the current folder.
 ```
 printf 'some-test-secret\n' > /tmp/key1
 ./kbs-client --url http://127.0.0.1:8090 config set-resource --path default/kbsres1/key1 --resource-file /tmp/key1
@@ -117,7 +97,7 @@ python3 confapp.py
 curl --noproxy '*' -s -X POST http://127.0.0.1:8080/api/v1/compute -H 'Content-Type: application/json' -d '{"message":"hello"}'
 ```
 - Expect: JSON with `"algorithm":"HMAC-SHA256"` and a hex `result`.
-- On the laptop, `hello` gave `efcd9787e3a1dcee58ed9b4e94a4e09f589ff84ad19dfefc315348ffba01dcbb`. The same result in the sensitive env confirms the same secret.
+- On the laptop, `hello` gave `efcd9787e3a1dcee58ed9b4e94a4e09f589ff84ad19dfefc315348ffba01dcbb`. The same result in env2 confirms the same secret.
 
 ---
 
@@ -128,8 +108,8 @@ curl --noproxy '*' -s -X POST http://127.0.0.1:8080/api/v1/compute -H 'Content-T
 | `python: not found` | use `python3` |
 | `No module named flask` | `sudo apt install -y python3-pip python3-flask` (or the mirror's equivalent) |
 | `kbs-client: Permission denied` | `chmod +x kbs-client` |
-| `config` commands give auth errors | not in `<COMPOSE_DIR>`, or `admin-token` missing (re-run `docker compose up -d` so `setup` regenerates it) |
-| cdhmock returns `trustee error` (502) | wrong `KBS_CLIENT` path, or Trustee not running (check `docker compose ps`) |
+| `config` commands give auth errors | not in `<COMPOSE_DIR>`, or `admin-token` missing (run `docker compose up -d` so `setup` creates it) |
+| cdhmock returns `trustee error` (502) | wrong `KBS_CLIENT` path, or Trustee not running (`docker compose ps`) |
 | Trustee containers gone after a restart | run step 2 again, then repeat steps 3 and 4 |
 
 ## Notes
