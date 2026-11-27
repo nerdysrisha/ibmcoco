@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Confidential computing demo</title>
+  <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+<main>
+  <h1>Confidential computing demo</h1>
+  <p class="lead">This page runs on a normal worker. The secret lives only in App 1, inside the confidential VM.</p>
+
+  <section class="panel" aria-labelledby="status-title">
+    <h2 id="status-title">App 1 status</h2>
+    {% if status.reachable %}
+      <dl>
+        <dt>Reachable</dt><dd class="ok">yes</dd>
+        <dt>Host</dt><dd>{{ status.data.get('hostname', '-') }}</dd>
+        <dt>TDX guest flag</dt><dd>{{ 'yes' if status.data.get('tdx_guest_flag') else 'no' }}</dd>
+        <dt>CDH reports TEE</dt><dd>{{ status.data.get('cdh_tee') or '-' }}</dd>
+        <dt>Secret cached</dt><dd>{{ 'yes' if status.data.get('secret_available') else 'no' }}</dd>
+        <dt>Version</dt><dd>{{ status.data.get('version', '-') }}</dd>
+      </dl>
+      <p class="hint">The TDX flag is a hint, not proof. Proof comes from attestation.</p>
+    {% else %}
+      <p class="bad">Not reachable: {{ status.error }}</p>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="form-title">
+    <h2 id="form-title">Send a message</h2>
+    <form method="post" action="run" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="message">Message (1 to 1024 characters)</label>
+      <input id="message" name="message" type="text" maxlength="1024" required value="{{ sent_message }}">
+      <button type="submit">Run</button>
+    </form>
+  </section>
+
+  {% if result %}
+  <section class="panel" aria-labelledby="result-title">
+    <h2 id="result-title">Result</h2>
+    <dl>
+      <dt>You sent</dt><dd>{{ sent_message }}</dd>
+      <dt>Result</dt><dd class="mono">{{ result.result }}</dd>
+      <dt>Algorithm</dt><dd>{{ result.algorithm }}</dd>
+      <dt>App 1 time</dt><dd>{{ result.app1_ms }} ms</dd>
+      <dt>Round trip</dt><dd>{{ result.app2_ms }} ms</dd>
+    </dl>
+    <p class="details">HTTP {{ result.http_status }} &middot; request id {{ result.request_id }}</p>
+  </section>
+  {% endif %}
+
+  {% if error %}
+  <section class="panel error" role="alert" aria-labelledby="error-title">
+    <h2 id="error-title">Something went wrong</h2>
+    <p class="bad">{{ error.message }}</p>
+    <p class="details">{% if error.http_status %}HTTP {{ error.http_status }} &middot; {% endif %}request id {{ error.request_id }}</p>
+  </section>
+  {% endif %}
+
+  <footer>app2-web-ui {{ app_version }}</footer>
+</main>
+</body>
+</html>
