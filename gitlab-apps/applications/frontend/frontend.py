@@ -26,6 +26,7 @@ APP_NAME = "app2-web-ui"
 APP_VERSION = "1.0.0"
 
 MAX_MESSAGE_CHARS = 1024
+MAX_TOKEN_CHARS = 6000  # encrypted text accepted by the decrypt panel
 REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 CSRF_RE = re.compile(r"^[A-Za-z0-9_-]{20,64}$")
 CSRF_COOKIE = "csrf_token"
@@ -212,10 +213,10 @@ def create_app(config: Config | None = None) -> Flask:
         resp.headers["X-Frame-Options"] = "DENY"
         resp.headers["Referrer-Policy"] = "no-referrer"
         resp.headers["Content-Security-Policy"] = (
-            "default-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
+            "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
         if request.endpoint != "static":
             resp.headers["Cache-Control"] = "no-store"
-        if getattr(g, "set_csrf_cookie", False) and request.endpoint in ("index", "run"):
+        if getattr(g, "set_csrf_cookie", False) and request.endpoint in ("index", "encrypt", "decrypt"):
             resp.set_cookie(CSRF_COOKIE, g.csrf_token, httponly=True, samesite="Strict",
                             secure=is_https(), path="/")
         level = logging.DEBUG if request.path == "/healthz" else logging.INFO
@@ -231,9 +232,9 @@ def create_app(config: Config | None = None) -> Flask:
         return resp
 
     def page(status_code: int = 200, **context):
-        context.setdefault("result", None)
         context.setdefault("error", None)
-        context.setdefault("sent_message", "")
+        context.setdefault("p1", {})  # panel 1 (encrypt): input, output, info
+        context.setdefault("p2", {})  # panel 2 (decrypt): input, output, info
         context["csrf_token"] = g.csrf_token
         context["app_version"] = APP_VERSION
         context.setdefault("status", status_panel())
@@ -247,35 +248,48 @@ def create_app(config: Config | None = None) -> Flask:
     def index():
         return page()
 
-    @app.post("/run")
-    def run():
+    def process(op: str):
+        """op is 'encrypt' or 'decrypt': check the form, call App 1, show the page again."""
+        field = "message" if op == "encrypt" else "ciphertext"
+        limit = MAX_MESSAGE_CHARS if op == "encrypt" else MAX_TOKEN_CHARS
+        panel = "p1" if op == "encrypt" else "p2"
+        value = request.form.get(field, "")
+        ctx = {panel: {"input": value[:limit]}}
+
         form_token = request.form.get("csrf_token", "")
         cookie_token = request.cookies.get(CSRF_COOKIE, "")
         if not (form_token and cookie_token and hmac.compare_digest(form_token, cookie_token)):
             return page(400, error={"message": "Invalid or missing form token. Reload the page and try again.",
-                                    "http_status": None, "request_id": g.request_id})
+                                    "http_status": None, "request_id": g.request_id}, **ctx)
+        if not value.strip() or len(value) > limit:
+            return page(400, error={"message": f"Enter some text (1 to {limit} characters).",
+                                    "http_status": None, "request_id": g.request_id}, **ctx)
 
-        message = request.form.get("message", "")
-        if not message.strip() or len(message) > MAX_MESSAGE_CHARS:
-            return page(400, sent_message=message[:MAX_MESSAGE_CHARS], error={
-                "message": f"Enter some text (1 to {MAX_MESSAGE_CHARS} characters).",
-                "http_status": None, "request_id": g.request_id})
-
-        reply = call_app1(cfg, "POST", "/api/v1/compute", {"message": message},
+        reply = call_app1(cfg, "POST", "/api/v1/" + op, {field: value},
                           cfg.app1_timeout_seconds, forward_headers())
         g.upstream_status = reply.http_status
         if reply.ok and reply.data and isinstance(reply.data.get("result"), str):
-            return page(200, sent_message=message, result={
-                "result": reply.data["result"],
+            output = reply.data["result"]
+            ctx[panel]["output"] = output
+            ctx[panel]["info"] = {
                 "algorithm": reply.data.get("algorithm", ""),
                 "app1_ms": reply.data.get("elapsed_ms"),
                 "app2_ms": reply.elapsed_ms,
-                "request_id": reply.data.get("request_id", g.request_id),
-                "http_status": reply.http_status,
-            })
+            }
+            if op == "encrypt":
+                ctx["p2"] = {"input": output}  # pre-fill panel 2, so no copy and paste is needed
+            return page(200, **ctx)
         request_id = (reply.data or {}).get("request_id") or g.request_id
-        return page(400 if reply.http_status == 400 else 502, sent_message=message, error={
-            "message": explain(reply), "http_status": reply.http_status, "request_id": request_id})
+        return page(400 if reply.http_status == 400 else 502, error={
+            "message": explain(reply), "http_status": reply.http_status, "request_id": request_id}, **ctx)
+
+    @app.post("/encrypt")
+    def encrypt():
+        return process("encrypt")
+
+    @app.post("/decrypt")
+    def decrypt():
+        return process("decrypt")
 
     @app.errorhandler(Exception)
     def unexpected(exc):

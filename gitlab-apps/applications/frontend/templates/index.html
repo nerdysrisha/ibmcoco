@@ -140,39 +140,42 @@ input:disabled, textarea:disabled, button:disabled { opacity: 0.55; cursor: not-
 
   <div class="panels">
 
-    <!-- Panel 1: plain text in, protected text out (works now) -->
     <section class="panel" aria-labelledby="p1-title">
       <h2 id="p1-title">1. Encrypt</h2>
-      <form method="post" action="run" autocomplete="off">
+      <form method="post" action="encrypt" autocomplete="off">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="field">
           <label for="message">Input (plain text)</label>
-          <input id="message" name="message" type="text" maxlength="1024" required placeholder="Hello" value="{{ sent_message }}">
+          <input id="message" name="message" type="text" maxlength="1024" required placeholder="Hello" value="{{ p1.get('input', '') }}">
         </div>
         <button type="submit">Encrypt</button>
       </form>
       <div class="field" style="margin-top:0.75rem">
-        <label for="out1">Output (for now a keyed hash, made by App 1)</label>
-        <textarea id="out1" class="mono" rows="3" readonly>{% if result %}{{ result.result }}{% endif %}</textarea>
+        <label for="out1">Output (encrypted text)</label>
+        <textarea id="out1" class="mono" rows="4" readonly>{{ p1.get('output', '') }}</textarea>
       </div>
-      {% if result %}
-      <p class="details">{{ result.algorithm }} &middot; App 1 {{ result.app1_ms }} ms &middot; round trip {{ result.app2_ms }} ms</p>
+      {% if p1.get('info') %}
+      <p class="details">{{ p1.info.algorithm }} &middot; App 1 {{ p1.info.app1_ms }} ms &middot; round trip {{ p1.info.app2_ms }} ms</p>
       {% endif %}
     </section>
 
-    <!-- Panel 2: placeholder, not wired yet -->
     <section class="panel" aria-labelledby="p2-title">
-      <h2 id="p2-title">2. Decrypt <span class="badge">coming soon</span></h2>
-      <div class="field">
-        <label for="in2">Input (encrypted text)</label>
-        <input id="in2" type="text" placeholder="xlskslkdfdlks" disabled>
-      </div>
-      <button type="button" disabled>Decrypt</button>
+      <h2 id="p2-title">2. Decrypt</h2>
+      <form method="post" action="decrypt" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="field">
+          <label for="ciphertext">Input (encrypted text)</label>
+          <textarea id="ciphertext" name="ciphertext" class="mono" rows="4" maxlength="6000" required placeholder="Paste encrypted text here">{{ p2.get('input', '') }}</textarea>
+        </div>
+        <button type="submit">Decrypt</button>
+      </form>
       <div class="field" style="margin-top:0.75rem">
         <label for="out2">Output (decrypted text)</label>
-        <textarea id="out2" class="mono" rows="3" readonly disabled></textarea>
+        <textarea id="out2" class="mono" rows="2" readonly>{{ p2.get('output', '') }}</textarea>
       </div>
-      <p class="details">Needs a real decrypt endpoint in App 1. Not wired yet.</p>
+      {% if p2.get('info') %}
+      <p class="details">{{ p2.info.algorithm }} &middot; App 1 {{ p2.info.app1_ms }} ms &middot; round trip {{ p2.info.app2_ms }} ms</p>
+      {% endif %}
     </section>
 
   </div>

@@ -8,6 +8,8 @@ logged, or included in an error message.
 
 Only the Flask dependency is needed (the CDH client uses the standard library).
 """
+import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -23,6 +25,8 @@ import urllib.request
 import uuid
 from dataclasses import dataclass
 
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from flask import Flask, g, jsonify, request
 from werkzeug.exceptions import HTTPException
 
@@ -32,6 +36,8 @@ APP_VERSION = "1.0.0"
 RESOURCE_PATH_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 MAX_MESSAGE_CHARS = 1024
+MAX_TOKEN_CHARS = 6000  # encrypted text (base64) accepted by /decrypt
+KEY_LABEL = b"confapp-aes-gcm-v1"  # separates the encryption key from the HMAC use of the secret
 PROBE_PATHS = ("/healthz", "/readyz")
 
 log = logging.getLogger("app1")
@@ -200,6 +206,30 @@ def error_response(status: int, error: str, detail: str):
     return resp
 
 
+# --------------------------------------------------------------------------- encrypt / decrypt
+def derive_key(secret: bytes) -> bytes:
+    """32-byte AES key derived from the KBS secret (the secret itself is never used as the key)."""
+    return hmac.new(secret, KEY_LABEL, hashlib.sha256).digest()
+
+
+def encrypt_text(secret: bytes, plaintext: str) -> str:
+    """AES-256-GCM. Output is one base64 text: 12-byte nonce + ciphertext + tag."""
+    nonce = os.urandom(12)
+    sealed = AESGCM(derive_key(secret)).encrypt(nonce, plaintext.encode("utf-8"), None)
+    return base64.urlsafe_b64encode(nonce + sealed).decode("ascii")
+
+
+def decrypt_text(secret: bytes, token: str) -> str:
+    """Raises ValueError for anything that is not valid text from encrypt_text with this secret."""
+    try:
+        raw = base64.urlsafe_b64decode(token.strip().encode("ascii"))
+        if len(raw) < 12 + 16:
+            raise ValueError("too short")
+        return AESGCM(derive_key(secret)).decrypt(raw[:12], raw[12:], None).decode("utf-8")
+    except (binascii.Error, InvalidTag, UnicodeError, ValueError):
+        raise ValueError("decrypt_failed") from None
+
+
 # --------------------------------------------------------------------------- app
 def create_app(config: Config | None = None) -> Flask:
     cfg = config or Config.from_env()
@@ -285,6 +315,62 @@ def create_app(config: Config | None = None) -> Flask:
             "request_id": g.request_id,
             "result": digest,
             "algorithm": "HMAC-SHA256",
+            "resource": cfg.kbs_resource_path,
+            "elapsed_ms": int((time.perf_counter() - started) * 1000),
+        })
+
+    def secret_or_error():
+        """Returns (secret, None) or (None, error_response). Same handling as /compute."""
+        try:
+            return cache.get(), None
+        except CdhError as exc:
+            log.warning("secret fetch failed", extra={"fields": {
+                "request_id": g.request_id, "kind": exc.kind, "upstream_status": exc.upstream_status}})
+            if exc.kind in ("cdh_unreachable", "cdh_timeout"):
+                return None, error_response(503, "cdh_unreachable", exc.kind)
+            detail = f"cdh_status_{exc.upstream_status}" if exc.kind == "cdh_status" else exc.kind
+            return None, error_response(502, "secret_unavailable", detail)
+
+    @app.post("/api/v1/encrypt")
+    def encrypt():
+        started = time.perf_counter()
+        body = request.get_json(silent=True)
+        message = body.get("message") if isinstance(body, dict) else None
+        if not isinstance(message, str):
+            return error_response(400, "invalid_input", "body must be JSON with a string field 'message'")
+        if not 1 <= len(message) <= MAX_MESSAGE_CHARS:
+            return error_response(400, "invalid_input", f"message must be 1 to {MAX_MESSAGE_CHARS} characters")
+        secret, err = secret_or_error()
+        if err:
+            return err
+        return jsonify({
+            "request_id": g.request_id,
+            "result": encrypt_text(secret, message),
+            "algorithm": "AES-256-GCM",
+            "resource": cfg.kbs_resource_path,
+            "elapsed_ms": int((time.perf_counter() - started) * 1000),
+        })
+
+    @app.post("/api/v1/decrypt")
+    def decrypt():
+        started = time.perf_counter()
+        body = request.get_json(silent=True)
+        token = body.get("ciphertext") if isinstance(body, dict) else None
+        if not isinstance(token, str):
+            return error_response(400, "invalid_input", "body must be JSON with a string field 'ciphertext'")
+        if not 1 <= len(token) <= MAX_TOKEN_CHARS:
+            return error_response(400, "invalid_input", f"ciphertext must be 1 to {MAX_TOKEN_CHARS} characters")
+        secret, err = secret_or_error()
+        if err:
+            return err
+        try:
+            plaintext = decrypt_text(secret, token)
+        except ValueError:
+            return error_response(400, "decrypt_failed", "could not decrypt (text was changed, or made with a different secret)")
+        return jsonify({
+            "request_id": g.request_id,
+            "result": plaintext,
+            "algorithm": "AES-256-GCM",
             "resource": cfg.kbs_resource_path,
             "elapsed_ms": int((time.perf_counter() - started) * 1000),
         })
